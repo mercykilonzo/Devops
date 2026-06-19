@@ -1,3 +1,15 @@
+"""Service C — internal processor + callback to Service A.
+
+Internal only: bound to 127.0.0.1, no Nginx route, blocked by UFW.
+
+Routes:
+  GET /health   health check
+  GET /greet-c  process the request, then POST a callback to Service A /greeting-rcvd
+
+Uses the shared lib: log(), request_json(), get_request_id().
+See docs/API_CONTRACT.md.
+"""
+
 import os
 from datetime import datetime, timezone
 
@@ -15,7 +27,7 @@ SERVICE_A_URL = os.environ.get('SERVICE_A_URL', 'http://service-a.internal:3001'
 
 @require_http_methods(['GET'])
 def health(request):
-    """DONE — reference implementation."""
+    """Health check — returns 200 with service name, port, and status."""
     rid = get_request_id(request.headers)
     log(SERVICE, event='health_check', request_id=rid, method='GET', path='/health', status=200)
     return JsonResponse({

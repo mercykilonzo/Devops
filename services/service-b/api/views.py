@@ -1,18 +1,13 @@
-"""Service B — INTERNAL FORWARDER (Service A -> Service C).
-
-  >>> OWNER: __________  (assign one teammate)
+"""Service B — internal forwarder (Service A -> Service C).
 
 Internal only: bound to 127.0.0.1, no Nginx route, blocked by UFW.
-Implement the TODO endpoint by following docs/API_CONTRACT.md.
 
-Endpoints you own:
-  GET /health  -> DONE (reference implementation)
-  GET /greet   -> DONE: forwards to Service C /greet-c, propagating X-Request-ID
+Routes:
+  GET /health  health check
+  GET /greet   forward to Service C /greet-c, propagating X-Request-ID
 
-Helpers available from the shared lib (do not modify lib/):
-  log(SERVICE, event=..., request_id=..., path=..., status=...)
-  request_json(url, method=, headers=, body=)  -> {'status','body'}
-  get_request_id(request.headers)
+Uses the shared lib: log(), request_json(), get_request_id().
+See docs/API_CONTRACT.md.
 """
 
 import os
@@ -31,7 +26,7 @@ SERVICE_C_URL = os.environ.get('SERVICE_C_URL', 'http://service-c.internal:3003'
 
 @require_http_methods(['GET'])
 def health(request):
-    """DONE — reference implementation."""
+    """Health check — returns 200 with service name, port, and status."""
     rid = get_request_id(request.headers)
     log(SERVICE, event='health_check', request_id=rid, method='GET', path='/health', status=200)
     return JsonResponse({

@@ -1,7 +1,8 @@
-# API & Logging Contract  ⭐ single source of truth
+# API & Logging Reference
 
-Every service is built by a different person, so this contract is what makes
-them fit together at merge time. **Do not change it without telling the team.**
+The interface every service exposes, the request-tracing header, the structured
+log format, and the error codes. This is the contract the three services share
+so they interoperate.
 
 ## Services, ports, discovery
 
@@ -12,8 +13,8 @@ them fit together at merge time. **Do not change it without telling the team.**
 | Service C | 3003 | No (internal) | `service-c.internal` |
 
 - Services call each other by **name**, never by IP, using the env vars
-  `SERVICE_A_URL`, `SERVICE_B_URL`, `SERVICE_C_URL` (already set in the systemd
-  units and `run-local.sh`).
+  `SERVICE_A_URL`, `SERVICE_B_URL`, `SERVICE_C_URL` (set in the systemd units and
+  `run-local.sh`).
 - All services bind to `127.0.0.1`.
 
 ## The flow
@@ -27,9 +28,9 @@ client → Nginx :80 /service-a/greet-service-b
       ← success unwinds back to the client
 ```
 
-## Endpoints (build exactly these)
+## Endpoints
 
-### Service A  (owner: Person 1)
+### Service A
 | Method | Path | Purpose | Success response (200) |
 |--------|------|---------|------------------------|
 | GET | `/health` | health check | `{"service":"service-a","status":"healthy","port":3001,"message":"..."}` |
@@ -41,71 +42,71 @@ client → Nginx :80 /service-a/greet-service-b
 {"request_id":"<id>","source_service":"service-c","message":"Greeting processed","timestamp":"<iso8601>"}
 ```
 
-### Service B  (owner: Person 2)
+### Service B
 | Method | Path | Purpose | Success response (200) |
 |--------|------|---------|------------------------|
 | GET | `/health` | health check | `{"service":"service-b","status":"healthy","port":3002,"message":"..."}` |
 | GET | `/greet` | forward to C `/greet-c` | `{"request_id":"<id>","status":"forwarded","target":"service-c"}` |
 
-### Service C  (owner: Person 3)
+### Service C
 | Method | Path | Purpose | Success response (200) |
 |--------|------|---------|------------------------|
 | GET | `/health` | health check | `{"service":"service-c","status":"healthy","port":3003,"message":"..."}` |
 | GET | `/greet-c` | process, then POST callback to A `/greeting-rcvd` | `{"request_id":"<id>","status":"processed","callback_sent":true}` |
 
-## Request tracing — `X-Request-ID` (mandatory)
+## Request tracing — `X-Request-ID`
 
-- On every inbound request, derive the id with `get_request_id(request.headers)`
+- On every inbound request, the id is derived with `get_request_id(request.headers)`
   (returns the inbound `X-Request-ID`, or a fresh UUID if absent).
-- On every **outbound** call to another service, pass it along:
+- On every **outbound** call to another service, the id is passed along:
   `headers={'X-Request-ID': rid}`.
-- Put `request_id` on **every** log line. This is how one request is traced
+- `request_id` appears on **every** log line — this is how one request is traced
   across all three services.
 
-## Logging format (mandatory)
+## Logging format
 
-Use the shared logger — one JSON object per line to stdout:
+Each service emits one JSON object per line to stdout (captured by journald) via
+the shared logger:
 
 ```python
 from lib.logger import log
 log(SERVICE, event='request_received', request_id=rid, method='GET', path='/greet', status=200)
 ```
 
-`timestamp` and `service` are added automatically. Always include:
+`timestamp` and `service` are added automatically. Every line includes:
 `event`, `request_id`, `path`, `status`.
 
-**Standard event names** (use these exact strings so traces line up):
+**Event names** used across the system (consistent so traces line up):
 
-| event | when |
-|-------|------|
-| `service_started` | on boot |
+| event | meaning |
+|-------|---------|
+| `service_started` | process booted |
 | `health_check` | `/health` hit |
 | `request_received` | inbound work request received |
 | `calling_downstream` | just before calling another service |
-| `downstream_response` | got a response from a downstream service |
+| `downstream_response` | response received from a downstream service |
 | `request_forwarded` | B forwarded to C |
 | `callback_sent` | C sent its callback to A |
 | `callback_received` | A received C's callback |
 | `flow_completed` | A finished the whole flow |
-| `request_failed` | a downstream call failed (also set `error=str(e)`) |
+| `request_failed` | a downstream/callback call failed (includes `error`) |
 | `route_not_found` | unknown route (404) |
 
 ## Error responses
 
 | Situation | HTTP status | Body |
 |-----------|-------------|------|
-| Unknown route | 404 | `{"status":"not_found","message":"..."}` (Django default 404 is OK too) |
+| Unknown route | 404 | `{"status":"not_found","message":"..."}` |
 | Downstream call failed (A→B, B→C) | 502 | `{"status":"error","message":"Upstream call failed","error":"..."}` |
 | Callback failed (C→A) | 500 | `{"status":"error","message":"Callback failed","error":"..."}` |
-| Not yet implemented (stub) | 501 | `{"status":"not_implemented","todo":"..."}` |
 
-## How to verify your service matches the contract
+## Exercising the API
 
 ```bash
 # from repo root, with the venv active:
 ./scripts/run-local.sh
-curl -s http://127.0.0.1:3001/health        # A
-curl -s http://127.0.0.1:3002/health        # B
-curl -s http://127.0.0.1:3003/health        # C
-curl -s -H "X-Request-ID: t1" http://127.0.0.1:3001/greet-service-b   # full flow once all are done
+curl -s http://127.0.0.1:3001/health                                  # A
+curl -s http://127.0.0.1:3002/health                                  # B
+curl -s http://127.0.0.1:3003/health                                  # C
+curl -s -H "X-Request-ID: t1" http://127.0.0.1:3001/greet-service-b   # full flow
 ```

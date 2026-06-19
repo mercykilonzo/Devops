@@ -1,30 +1,31 @@
 # Service B — internal forwarder
 
-**You own this service.** It is internal only (bound to `127.0.0.1`, no Nginx
-route, blocked by UFW). It receives requests from Service A and forwards them to
-Service C.
+Internal only — bound to `127.0.0.1`, no Nginx route, blocked by UFW. Receives
+requests from Service A and forwards them to Service C. Runs as a Django app
+served by gunicorn on `127.0.0.1:3002`.
 
-## What to implement
+## Endpoints
 
-Edit **`api/views.py`** only. `/health` is already done as a reference.
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/health` | Liveness check — returns service name, port, status. |
+| GET | `/greet` | Forwards to Service C `/greet-c`, then returns `{"status":"forwarded","target":"service-c"}`. Returns `502` if the downstream call fails. |
 
-1. **`GET /greet`** — forward to Service C's `/greet-c`, propagating the
-   `X-Request-ID`, and return the contracted JSON.
+Request/response shapes and log events: [`../../docs/API_CONTRACT.md`](../../docs/API_CONTRACT.md).
 
-Exact request/response shapes and log event names are in
-[`../../docs/API_CONTRACT.md`](../../docs/API_CONTRACT.md).
+## How it talks to other services
+Calls Service C at `SERVICE_C_URL` (default `http://service-c.internal:3003`),
+propagating the `X-Request-ID` header.
 
 ## Run & test (from the repo root, venv active)
 
 ```bash
 ./scripts/run-local.sh
 curl -s http://127.0.0.1:3002/health
-curl -s http://127.0.0.1:3002/greet        # once implemented (needs C for full success)
+curl -s http://127.0.0.1:3002/greet        # succeeds end-to-end when C is running
 ```
 
-Service B talks to Service C via `SERVICE_C_URL` (already set).
-
-## Don't edit
-`services/lib/`, the Django config in `service_b/`, `nginx/`, `systemd/`,
-`scripts/` — those are shared. Coordinate with the team if you think one needs
-to change.
+## Code
+- `api/views.py` — request handlers
+- `api/urls.py` — route table
+- `service_b/` — Django settings / wsgi entry

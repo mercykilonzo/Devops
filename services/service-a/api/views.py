@@ -1,19 +1,12 @@
-"""Service A — PUBLIC ENTRY POINT (reached through Nginx on port 80).
+"""Service A — public entry point (reached through Nginx on port 80).
 
-  >>> OWNER: __________  (assign one teammate)
+Routes:
+  GET  /health           health check
+  GET  /greet-service-b  start the A -> B -> C -> A flow; call Service B /greet
+  POST /greeting-rcvd    receive the callback from Service C
 
-Implement the TODO endpoints below by following docs/API_CONTRACT.md.
-`/health` is already done — copy its logging style for the others.
-
-Endpoints you own (see contract for exact request/response shapes):
-  GET  /health           -> DONE (reference implementation)
-  GET  /greet-service-b  -> TODO: start the flow, call Service B /greet
-  POST /greeting-rcvd    -> TODO: receive the callback from Service C
-
-Helpers available from the shared lib (do not modify lib/):
-  log(SERVICE, event=..., request_id=..., path=..., status=...)  -> JSON log line
-  request_json(url, method=, headers=, body=)                    -> {'status','body'}
-  get_request_id(request.headers)                                -> trace id (X-Request-ID or new)
+Uses the shared lib: log() (structured JSON), request_json() (HTTP client),
+get_request_id() (X-Request-ID tracing). See docs/API_CONTRACT.md.
 """
 
 import json
@@ -34,7 +27,7 @@ SERVICE_B_URL = os.environ.get('SERVICE_B_URL', 'http://service-b.internal:3002'
 
 @require_http_methods(['GET'])
 def health(request):
-    """DONE — reference implementation. Returns 200 + service info."""
+    """Health check — returns 200 with service name, port, and status."""
     rid = get_request_id(request.headers)
     log(SERVICE, event='health_check', request_id=rid, method='GET', path='/health', status=200)
     return JsonResponse({
