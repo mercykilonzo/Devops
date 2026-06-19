@@ -1,0 +1,34 @@
+[Unit]
+Description=Service B (internal forwarder: Service A -> Service C)
+Documentation=https://github.com/your-org/devops
+After=network-online.target service-c.service
+Wants=network-online.target
+# Prefer C to be up first, but B can still run independently for its /health.
+After=service-c.service
+
+[Service]
+Type=simple
+User=platform
+Group=platform
+WorkingDirectory=/opt/platform/services/service-b
+Environment=PYTHONUNBUFFERED=1
+Environment=PORT=3002
+Environment=BIND_ADDR=127.0.0.1
+Environment=SERVICE_C_URL=http://service-c.internal:3003
+Environment=DJANGO_SETTINGS_MODULE=service_b.settings
+ExecStart=/usr/bin/python3 -m gunicorn service_b.wsgi:application --bind 127.0.0.1:3002 --workers 2
+
+Restart=always
+RestartSec=3
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=service-b
+
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
