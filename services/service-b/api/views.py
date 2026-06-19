@@ -7,7 +7,7 @@ Implement the TODO endpoint by following docs/API_CONTRACT.md.
 
 Endpoints you own:
   GET /health  -> DONE (reference implementation)
-  GET /greet   -> TODO: forward to Service C /greet-c, propagating X-Request-ID
+  GET /greet   -> DONE: forwards to Service C /greet-c, propagating X-Request-ID
 
 Helpers available from the shared lib (do not modify lib/):
   log(SERVICE, event=..., request_id=..., path=..., status=...)
@@ -45,18 +45,18 @@ def health(request):
 @require_http_methods(['GET'])
 def greet(request):
     rid = get_request_id(request.headers)
-    # TODO (Service B owner): forward the request to Service C.
-    #   1. log(SERVICE, event='request_received', request_id=rid, method='GET',
-    #          path='/greet', status=200)
-    #   2. resp = request_json(f'{SERVICE_C_URL}/greet-c', method='GET',
-    #                          headers={'X-Request-ID': rid})
-    #   3. log(SERVICE, event='request_forwarded', request_id=rid,
-    #          target='service-c', status=resp['status'])
-    #   4. return JsonResponse({'request_id': rid, 'status': 'forwarded',
-    #                           'target': 'service-c'})
-    #   On error: log(event='request_failed', status=502) + return status=502.
-    log(SERVICE, event='not_implemented', request_id=rid, method='GET', path='/greet', status=501)
-    return JsonResponse(
-        {'status': 'not_implemented', 'todo': 'Service B: forward to Service C'},
-        status=501,
-    )
+    log(SERVICE, event='request_received', request_id=rid, method='GET', path='/greet', status=200)
+
+    log(SERVICE, event='calling_downstream', request_id=rid, path='/greet', status=200)
+    try:
+        resp = request_json(f'{SERVICE_C_URL}/greet-c', method='GET', headers={'X-Request-ID': rid})
+    except Exception as e:
+        log(SERVICE, event='request_failed', request_id=rid, path='/greet', status=502, error=str(e))
+        return JsonResponse(
+            {'status': 'error', 'message': 'Upstream call failed', 'error': str(e)},
+            status=502,
+        )
+
+    log(SERVICE, event='downstream_response', request_id=rid, target='service-c', status=resp['status'])
+    log(SERVICE, event='request_forwarded', request_id=rid, target='service-c', status=resp['status'])
+    return JsonResponse({'request_id': rid, 'status': 'forwarded', 'target': 'service-c'})
