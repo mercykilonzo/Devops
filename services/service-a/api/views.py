@@ -45,41 +45,46 @@ def health(request):
     })
 
 
+
 @require_http_methods(['GET'])
 def greet_service_b(request):
     rid = get_request_id(request.headers)
-    # TODO (Service A owner): start the A -> B -> C -> A flow.
-    #   1. log(SERVICE, event='request_received', request_id=rid, method='GET',
-    #          path='/greet-service-b', status=200)
-    #   2. resp = request_json(f'{SERVICE_B_URL}/greet', method='GET',
-    #                          headers={'X-Request-ID': rid})
-    #   3. log(SERVICE, event='flow_completed', request_id=rid, ... status=200)
-    #   4. return JsonResponse({'request_id': rid, 'status': 'success',
-    #                           'message': 'Request completed successfully'})
-    #   On error: log(event='request_failed', status=502) and
-    #             return JsonResponse({...}, status=502)
-    log(SERVICE, event='not_implemented', request_id=rid, method='GET',
-        path='/greet-service-b', status=501)
-    return JsonResponse(
-        {'status': 'not_implemented', 'todo': 'Service A: call Service B and return success'},
-        status=501,
-    )
+    log(SERVICE, event='request_received', request_id=rid, method='GET',
+        path='/greet-service-b', status=200)
+
+    log(SERVICE, event='calling_downstream', request_id=rid, target='service-b', path='/greet')
+    try:
+        resp = request_json(f'{SERVICE_B_URL}/greet', method='GET',
+                            headers={'X-Request-ID': rid})
+    except Exception as e:
+        log(SERVICE, event='request_failed', request_id=rid, method='GET',
+            path='/greet-service-b', status=502, error=str(e))
+        return JsonResponse(
+            {'status': 'error', 'message': 'Upstream call failed', 'error': str(e)},
+            status=502,
+        )
+
+    log(SERVICE, event='downstream_response', request_id=rid, target='service-b',
+        status=resp['status'])
+    log(SERVICE, event='flow_completed', request_id=rid, method='GET',
+        path='/greet-service-b', status=200)
+    return JsonResponse({
+        'request_id': rid,
+        'status': 'success',
+        'message': 'Request completed successfully',
+    })
 
 
 @csrf_exempt
 @require_http_methods(['POST'])
 def greeting_rcvd(request):
     rid = get_request_id(request.headers)
-    # TODO (Service A owner): receive Service C's callback.
-    #   1. body = json.loads(request.body) if request.body else {}
-    #   2. rid = body.get('request_id') or rid
-    #   3. log(SERVICE, event='callback_received', request_id=rid,
-    #          source_service=body.get('source_service', 'service-c'),
-    #          method='POST', path='/greeting-rcvd', status=200)
-    #   4. return JsonResponse({'status': 'received'})
-    log(SERVICE, event='not_implemented', request_id=rid, method='POST',
-        path='/greeting-rcvd', status=501)
-    return JsonResponse(
-        {'status': 'not_implemented', 'todo': 'Service A: handle callback from Service C'},
-        status=501,
-    )
+    try:
+        body = json.loads(request.body) if request.body else {}
+    except ValueError:
+        body = {}
+    rid = body.get('request_id') or rid
+    log(SERVICE, event='callback_received', request_id=rid,
+        source_service=body.get('source_service', 'service-c'),
+        method='POST', path='/greeting-rcvd', status=200)
+    return JsonResponse({'status': 'received'})
