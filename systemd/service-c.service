@@ -1,0 +1,35 @@
+[Unit]
+Description=Service C (internal processing + callback to Service A)
+Documentation=https://github.com/your-org/devops
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=platform
+Group=platform
+WorkingDirectory=/opt/platform/services/service-c
+Environment=PYTHONUNBUFFERED=1
+Environment=PORT=3003
+Environment=BIND_ADDR=127.0.0.1
+Environment=SERVICE_A_URL=http://service-a.internal:3001
+Environment=DJANGO_SETTINGS_MODULE=service_c.settings
+ExecStart=/usr/bin/python3 -m gunicorn service_c.wsgi:application --bind 127.0.0.1:3003 --workers 2
+
+# Self-healing: restart on any crash/non-zero exit.
+Restart=always
+RestartSec=3
+
+# Logs -> journald (journalctl -t service-c).
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=service-c
+
+# Light hardening.
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

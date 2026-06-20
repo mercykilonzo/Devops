@@ -1,0 +1,45 @@
+[Unit]
+Description=Service A (public entry point, behind Nginx)
+Documentation=https://github.com/your-org/devops
+
+# Dependency management requirement:
+#   - Service A must NOT start before Service B and Service C  -> After=
+#   - Service A requires both dependencies to be active        -> Requires=
+#     (if B or C is stopped, A is stopped too; if they fail, A fails)
+After=network-online.target service-b.service service-c.service
+Wants=network-online.target
+Requires=service-b.service service-c.service
+
+[Service]
+Type=simple
+User=platform
+Group=platform
+WorkingDirectory=/opt/platform/services/service-a
+Environment=PYTHONUNBUFFERED=1
+Environment=PORT=3001
+Environment=BIND_ADDR=127.0.0.1
+Environment=SERVICE_B_URL=http://service-b.internal:3002
+Environment=SERVICE_C_URL=http://service-c.internal:3003
+Environment=DEP_WAIT_TIMEOUT=30
+Environment=DJANGO_SETTINGS_MODULE=service_a.settings
+
+# Readiness gate: do not become operational until B and C answer /health.
+# If a dependency never comes up within DEP_WAIT_TIMEOUT, start fails and
+# systemd retries (Restart=always), so A stays down until deps are healthy.
+ExecStartPre=/opt/platform/scripts/wait-for-deps.sh
+ExecStart=/usr/bin/python3 -m gunicorn service_a.wsgi:application --bind 127.0.0.1:3001 --workers 2
+
+Restart=always
+RestartSec=3
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=service-a
+
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
