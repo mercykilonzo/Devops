@@ -316,21 +316,28 @@ Each `services/service-*/` folder has its own README describing that service.
 - **[`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)** — diagnosing common failures
 
 
-## Running with Docker
+# Running with Docker
+
+> **Note:** The Docker implementation is available on the **`feature/docker`** branch. If you clone the repository from `main`, the Docker files (`docker-compose.yml`, `.dockerignore`, and the service Dockerfiles) will not be present.
 
 ## Features
 
-- Three communicating microservices (Service A, B and C)
-- Structured JSON logging
-- Request ID propagation across services
-- Health check endpoints
-- Callback flow between services
-- Dockerized deployment using Docker Compose
+The Docker implementation includes:
 
-### Prerequisites
+* Dockerized versions of Service A, Service B, and Service C
+* Docker Compose configuration for running all services together
+* Internal container networking for inter-service communication
+* Health check endpoints
+* Structured JSON logging
+* Request ID propagation across all services
+* Callback flow between services
 
-- Docker
-- Docker Compose
+## Prerequisites
+
+Before running the project, install:
+
+* Docker Engine
+* Docker Compose
 
 Verify your installation:
 
@@ -339,41 +346,61 @@ docker --version
 docker compose version
 ```
 
-### Build the Docker images
+## Clone the Repository
+
+Clone the project and switch to the Docker feature branch:
+
+```bash
+git clone https://github.com/mercykilonzo/Devops.git
+cd Devops
+git checkout feature/docker
+```
+
+## Build the Containers
+
+Build all Docker images:
 
 ```bash
 docker compose build
 ```
 
-### Start all services
+Or build and start everything in one step:
+
+```bash
+docker compose up --build
+```
+
+## Start the Services
+
+Run the application:
 
 ```bash
 docker compose up
 ```
 
-Or run them in detached mode:
+To run in detached mode:
 
 ```bash
 docker compose up -d
 ```
 
-### Stop all services
+## Verify the Containers
+
+Ensure all services are running:
 
 ```bash
-docker compose down
+docker ps
 ```
 
-## Docker Services
+Expected output should include:
 
-| Service | Container Port | Host Port |
-|---------|---------------|-----------|
-| Service A | 3001 | 3001 |
-| Service B | 3002 | 3002 |
-| Service C | 3003 | 3003 |
+* service-a
+* service-b
+* service-c
 
-## Verify the services
+## Test the Services
 
-Health check:
+### Service A Health Check
 
 ```bash
 curl http://localhost:3001/health
@@ -384,13 +411,11 @@ Expected response:
 ```json
 {
   "service": "service-a",
-  "status": "healthy",
-  "port": 3001,
-  "message": "Hello service-a listening on 3001"
+  "status": "healthy"
 }
 ```
 
-Test the complete service chain:
+### Test the Complete Request Flow
 
 ```bash
 curl -H "X-Request-ID: docker-test" \
@@ -407,10 +432,18 @@ Expected response:
 }
 ```
 
-View container logs:
+## View Logs
+
+Monitor logs from all services:
 
 ```bash
 docker compose logs
+```
+
+View only the latest logs:
+
+```bash
+docker compose logs --tail=30
 ```
 
 View logs for a specific service:
@@ -419,4 +452,41 @@ View logs for a specific service:
 docker compose logs service-a
 docker compose logs service-b
 docker compose logs service-c
+```
+
+The logs demonstrate:
+
+* Request received by Service A
+* Forwarding to Service B
+* Service B calling Service C
+* Service C sending a callback to Service A
+* Successful completion of the request
+
+## Stop the Application
+
+Stop all running containers:
+
+```bash
+docker compose down
+```
+
+To also remove associated volumes:
+
+```bash
+docker compose down -v
+```
+
+## Project Structure
+
+```
+.
+├── docker-compose.yml
+├── .dockerignore
+└── services
+    ├── service-a
+    │   └── Dockerfile
+    ├── service-b
+    │   └── Dockerfile
+    └── service-c
+        └── Dockerfile
 ```
