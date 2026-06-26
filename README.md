@@ -314,3 +314,109 @@ Each `services/service-*/` folder has its own README describing that service.
 - **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)** — components, request flow, design decisions
 - **[`docs/RUNBOOK.md`](docs/RUNBOOK.md)** — deploy/operate procedures, manual install
 - **[`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)** — diagnosing common failures
+
+
+## Running with Docker
+
+## Features
+
+- Three communicating microservices (Service A, B and C)
+- Structured JSON logging
+- Request ID propagation across services
+- Health check endpoints
+- Callback flow between services
+- Dockerized deployment using Docker Compose
+
+### Prerequisites
+
+- Docker
+- Docker Compose
+
+Verify your installation:
+
+```bash
+docker --version
+docker compose version
+```
+
+### Build the Docker images
+
+```bash
+docker compose build
+```
+
+### Start all services
+
+```bash
+docker compose up
+```
+
+Or run them in detached mode:
+
+```bash
+docker compose up -d
+```
+
+### Stop all services
+
+```bash
+docker compose down
+```
+
+## Docker Services
+
+| Service | Container Port | Host Port |
+|---------|---------------|-----------|
+| Service A | 3001 | 3001 |
+| Service B | 3002 | 3002 |
+| Service C | 3003 | 3003 |
+
+## Verify the services
+
+Health check:
+
+```bash
+curl http://localhost:3001/health
+```
+
+Expected response:
+
+```json
+{
+  "service": "service-a",
+  "status": "healthy",
+  "port": 3001,
+  "message": "Hello service-a listening on 3001"
+}
+```
+
+Test the complete service chain:
+
+```bash
+curl -H "X-Request-ID: docker-test" \
+http://localhost:3001/greet-service-b
+```
+
+Expected response:
+
+```json
+{
+  "request_id": "docker-test",
+  "status": "success",
+  "message": "Request completed successfully"
+}
+```
+
+View container logs:
+
+```bash
+docker compose logs
+```
+
+View logs for a specific service:
+
+```bash
+docker compose logs service-a
+docker compose logs service-b
+docker compose logs service-c
+```
