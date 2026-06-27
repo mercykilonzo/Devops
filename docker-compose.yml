@@ -1,38 +1,52 @@
 services:
 
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: nginx
+    ports:
+      - "8080:80"                     # the ONLY host-published port
+    volumes:
+      - ./nginx/platform.docker.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - service-a
+    restart: unless-stopped
+
   service-a:
     build:
       context: .
       dockerfile: services/service-a/Dockerfile
     container_name: service-a
-    ports:
-      - "3001:3001"
     environment:
       SERVICE_B_URL: http://service-b:3002
       SERVICE_C_URL: http://service-c:3003
       PORT: 3001
+    expose:
+      - "3001"                        # internal to the compose network only
     depends_on:
       - service-b
       - service-c
+    restart: unless-stopped
 
   service-b:
     build:
       context: .
       dockerfile: services/service-b/Dockerfile
     container_name: service-b
-    ports:
-      - "3002:3002"
     environment:
       SERVICE_C_URL: http://service-c:3003
       PORT: 3002
+    expose:
+      - "3002"
+    restart: unless-stopped
 
   service-c:
     build:
       context: .
       dockerfile: services/service-c/Dockerfile
     container_name: service-c
-    ports:
-      - "3003:3003"
     environment:
       SERVICE_A_URL: http://service-a:3001
       PORT: 3003
+    expose:
+      - "3003"
+    restart: unless-stopped

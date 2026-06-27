@@ -21,11 +21,12 @@ Firewall: **UFW**. Target OS: **Ubuntu 22.04 / 24.04**.
 3. [API summary](#api-summary)
 4. [Run it locally](#run-it-locally)
 5. [Run it on a VM (production-style)](#run-it-on-a-vm-production-style)
-6. [Operating the services](#operating-the-services)
-7. [Validating the system](#validating-the-system)
-8. [Logs & request tracing](#logs--request-tracing)
-9. [Repository layout](#repository-layout)
-10. [Further documentation](#further-documentation)
+6. [Running with Docker Compose](#running-with-docker-compose)
+7. [Operating the services](#operating-the-services)
+8. [Validating the system](#validating-the-system)
+9. [Logs & request tracing](#logs--request-tracing)
+10. [Repository layout](#repository-layout)
+11. [Further documentation](#further-documentation)
 
 ---
 
@@ -200,6 +201,52 @@ sudo /opt/platform/scripts/uninstall.sh
 
 > A manual, step-by-step version of the deploy (equivalent to `install.sh`) is
 > in [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
+
+---
+
+## Running with Docker Compose
+
+The same stack also runs under Docker Compose (Nginx + Service A/B/C). **Nginx is
+the only service that publishes a host port (`8080`)**; B and C are reachable
+only inside the Compose network. Requires Docker + the Compose plugin.
+
+Validation evidence for all of the below is in
+[`docs/CONTAINER_VALIDATION.md`](docs/CONTAINER_VALIDATION.md).
+
+1. **Start the system**
+   ```bash
+   docker compose up --build -d
+   docker compose ps        # nginx, service-a, service-b, service-c all "Up"
+   ```
+2. **Test the public route** (through Nginx)
+   ```bash
+   curl -i http://localhost:8080/service-a/health
+   curl -i http://localhost:8080/service-a/greet-service-b   # full A→B→C→A flow
+   ```
+3. **Prove B and C are internal** (these should fail)
+   ```bash
+   curl --connect-timeout 3 http://localhost:3002/health     # refused
+   curl --connect-timeout 3 http://localhost:3003/health     # refused
+   ```
+4. **View logs**
+   ```bash
+   docker compose logs            # all services
+   docker compose logs service-a  # one service
+   ```
+5. **Stop / restart a service**
+   ```bash
+   docker compose stop service-b
+   docker compose start service-b
+   ```
+6. **Shut everything down**
+   ```bash
+   docker compose down
+   ```
+
+How this maps from the VM version: `systemd` → Compose starts containers ·
+`/etc/hosts` names → Compose DNS service names · `journalctl` →
+`docker compose logs` · UFW + loopback bind → Docker network with only Nginx
+publishing a port.
 
 ---
 
