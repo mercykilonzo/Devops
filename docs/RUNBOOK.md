@@ -115,16 +115,3 @@ sudo systemctl start service-a    # A waits for B+C health, then starts
 ```bash
 sudo ./scripts/uninstall.sh
 ```
-
-## Demonstration checklist (maps to the rubric)
-
-- [ ] Explain architecture (use `docs/ARCHITECTURE.md` diagram)
-- [ ] `healthcheck.sh` — all services respond
-- [ ] `smoke-test.sh` — full flow + single request_id across all logs
-- [ ] Show `getent hosts service-b.internal` (discovery)
-- [ ] Show `sudo nginx -T` `/service-a/` route; show no B/C route
-- [ ] From outside: `curl http://<ip>:3002/health` fails (security)
-- [ ] `systemctl status` / `restart` / kill-and-watch-restart (lifecycle)
-- [ ] `journalctl ... | grep <request_id>` (logging + tracing)
-- [ ] Stop Service B → explain `Requires=` behavior and 502 degradation
-- [ ] `sudo reboot` → everything comes back (reboot recovery)
