@@ -1,2 +1,2 @@
-django>=4.2
-gunicorn>=21.0
+Django==6.0.6
+gunicorn==26.0.0
