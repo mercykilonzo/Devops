@@ -390,15 +390,16 @@ Required GitHub settings (Settings → Secrets and variables → Actions):
 
 ### Latest deployed version
 
-> Fill in the real commit hash after the first publish to `main`.
+> Published by the `Container CI/CD` workflow on merge to `main`
+> ([run](https://github.com/mercykilonzo/Devops/actions/runs/28674891759)).
 
 ```
-Commit:     <full-commit-hash>
-Image tag:  sha-<short-commit-hash>
+Commit:     b24d844137d7cec4f5a53b936c4fab8ab3aebbfa
+Image tag:  sha-b24d844
 Images:
-  mwikalik/devops-service-a:sha-<short-commit-hash>
-  mwikalik/devops-service-b:sha-<short-commit-hash>
-  mwikalik/devops-service-c:sha-<short-commit-hash>
+  mwikalik/devops-service-a:sha-b24d844
+  mwikalik/devops-service-b:sha-b24d844
+  mwikalik/devops-service-c:sha-b24d844
 ```
 
 ### Deploy a specific version (production images from Docker Hub)
