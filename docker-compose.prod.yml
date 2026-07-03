@@ -1,0 +1,52 @@
+networks:
+  frontend:
+  backend:
+    internal: true
+
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/platform.docker.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - service-a
+    networks:
+      - frontend
+    restart: unless-stopped
+
+  service-a:
+    image: ${DOCKERHUB_USERNAME}/devops-service-a:${IMAGE_TAG}
+    environment:
+      PORT: "3001"
+      SERVICE_B_URL: http://service-b:3002
+      SERVICE_C_URL: http://service-c:3003
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-prod-secret-change-me}
+    depends_on:
+      - service-b
+      - service-c
+    networks:
+      - frontend
+      - backend
+    restart: unless-stopped
+
+  service-b:
+    image: ${DOCKERHUB_USERNAME}/devops-service-b:${IMAGE_TAG}
+    environment:
+      PORT: "3002"
+      SERVICE_C_URL: http://service-c:3003
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-prod-secret-change-me}
+    networks:
+      - backend
+    restart: unless-stopped
+
+  service-c:
+    image: ${DOCKERHUB_USERNAME}/devops-service-c:${IMAGE_TAG}
+    environment:
+      PORT: "3003"
+      SERVICE_A_URL: http://service-a:3001
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-prod-secret-change-me}
+    networks:
+      - backend
+    restart: unless-stopped

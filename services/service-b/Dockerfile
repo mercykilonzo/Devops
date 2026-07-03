@@ -1,5 +1,4 @@
-FROM python:3.12-slim
-
+FROM python:3.12.11-slim
 WORKDIR /app
 
 # curl: used by the internal service-discovery validation test and for debugging
@@ -8,7 +7,6 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY services/service-b/requirements.txt .
-
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY services/service-b/ ./service-b/
@@ -16,8 +14,10 @@ COPY services/lib/ ./lib/
 
 ENV PYTHONPATH=/app
 
+# Run as non-root user
+RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
+USER appuser
+
 WORKDIR /app/service-b
-
 EXPOSE 3002
-
 CMD ["gunicorn", "service_b.wsgi:application", "--bind", "0.0.0.0:3002", "--workers", "2"]

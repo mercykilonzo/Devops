@@ -537,3 +537,71 @@ docker compose down -v
     └── service-c
         └── Dockerfile
 ```
+
+## Container CI/CD Deployment
+
+### Latest deployed version
+Commit:
+`<fill in after first successful CI run>`
+
+Image tag:
+`sha-<fill in after first successful CI run>`
+
+Images:
+- `ushiadhiambo/devops-service-a:sha-<short-commit-hash>`
+- `ushiadhiambo/devops-service-b:sha-<short-commit-hash>`
+- `ushiadhiambo/devops-service-c:sha-<short-commit-hash>`
+
+### Deploy
+```bash
+cp .env.example .env
+export DOCKERHUB_USERNAME=ushiadhiambo
+export APP_NAME=Devops
+./scripts/deploy.sh sha-<short-commit-hash>
+```
+
+### Verify
+```bash
+docker compose -f docker-compose.prod.yml ps
+curl http://localhost:8080/service-a/health
+```
+
+### How to start the system
+```bash
+docker compose up --build -d
+```
+
+### How to test the public route
+```bash
+curl -s http://localhost:8090/service-a/health
+```
+
+### How to prove B and C are internal
+```bash
+curl -i --connect-timeout 3 http://localhost:3002/health
+curl -i --connect-timeout 3 http://localhost:3003/health
+```
+
+### How to view logs
+```bash
+docker compose logs
+docker compose logs service-a
+docker compose logs service-b
+docker compose logs service-c
+```
+
+### How to stop and restart a service
+```bash
+docker compose stop service-b
+docker compose start service-b
+```
+
+### How to shut everything down
+```bash
+docker compose down
+```
+
+### Port note
+Port 8080 is occupied by `lab-api.service` in the lab environment.
+Nginx is mapped to port 8090 instead for local development.
+All validation tests use port 8090.

@@ -21,3 +21,12 @@ APPEND_SLASH = False
 USE_I18N = False
 USE_TZ = True
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Test runner that does not require a database
+TEST_RUNNER = 'django.test.runner.DiscoverRunner'
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': ':memory:',
+    }
+}

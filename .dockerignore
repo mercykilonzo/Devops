@@ -1,4 +1,30 @@
-.venv
-.git
-__pycache__
-*.pyc
+# Version control
+.git/
+.github/
+
+# Python
+venv/
+.venv/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+
+# Environment files (never copy secrets into image)
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# Docs and scripts (not needed in container)
+docs/
+scripts/
+systemd/
+
+# Node (just in case)
+node_modules/
+
+# Misc
+README.md
+CONTRIBUTING.md
