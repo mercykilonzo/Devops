@@ -299,7 +299,7 @@ sudo ss -ltnp | grep -E ':3001|:3002|:3003'      # all show 127.0.0.1:<port>
 # firewall allows only SSH + HTTP:
 sudo ufw status verbose                           # 22 and 80 only
 
-# B and C are NOT reachable on the VM's external IP (only Nginp/:80 is):
+# B and C are NOT reachable on the VM's external IP (only Nginx/:80 is):
 curl http://<VM_IP>/service-a/health              # works (200)
 curl http://<VM_IP>:3002/health                   # refused
 curl http://<VM_IP>:3003/health                   # refused
@@ -340,15 +340,23 @@ You'll see the id pass through `request_received` (A) → `request_forwarded` (B
 ```
 Devops/
 ├── README.md                     # this file
+├── docker-compose.yml            # dev stack (builds locally); healthchecks, named networks
+├── docker-compose.prod.yml       # prod stack (pulls published images from Docker Hub)
+├── .env.example                  # DOCKERHUB_USERNAME / APP_NAME / IMAGE_TAG
+├── .dockerignore
+├── .github/workflows/
+│   └── container-ci-cd.yml       # CI/CD: verify → verify-compose → publish
 ├── services/
 │   ├── lib/                      # shared helpers: logger, util, http_client
-│   ├── service-a/                # public entry + callback receiver (Django)
-│   ├── service-b/                # forwarder (Django)
-│   └── service-c/                # processor + callback sender (Django)
-├── nginx/platform.conf           # reverse proxy + JSON access log
-├── systemd/                      # service-a/b/c.service units
-├── scripts/                      # install, run-local, healthcheck, smoke-test, ...
-└── docs/                         # API_CONTRACT, ARCHITECTURE, RUNBOOK, TROUBLESHOOTING
+│   ├── service-a/                # public entry + callback receiver (Django) + Dockerfile + api/tests.py
+│   ├── service-b/                # forwarder (Django) + Dockerfile + api/tests.py
+│   └── service-c/                # processor + callback sender (Django) + Dockerfile + api/tests.py
+├── nginx/
+│   ├── platform.conf             # VM reverse proxy (upstream 127.0.0.1)
+│   └── nginx-docker.conf         # Docker reverse proxy (upstream service-a, server_tokens off)
+├── systemd/                      # service-a/b/c.service units (VM)
+├── scripts/                      # install, run-local, healthcheck, smoke-test, deploy, ...
+└── docs/                         # API_CONTRACT, ARCHITECTURE, RUNBOOK, TROUBLESHOOTING, CONTAINER_VALIDATION
 ```
 
 Each `services/service-*/` folder has its own README describing that service.
@@ -362,10 +370,66 @@ Each `services/service-*/` folder has its own README describing that service.
 - **[`docs/RUNBOOK.md`](docs/RUNBOOK.md)** — deploy/operate procedures, manual install
 - **[`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)** — diagnosing common failures
 
+---
 
-# Running with Docker
+## Container CI/CD Deployment
 
-> **Note:** The Docker implementation is available on the **`feature/docker`** branch. If you clone the repository from `main`, the Docker files (`docker-compose.yml`, `.dockerignore`, and the service Dockerfiles) will not be present.
+CI/CD runs via GitHub Actions ([`.github/workflows/container-ci-cd.yml`](.github/workflows/container-ci-cd.yml)):
+
+- **Pull requests to `main`** run `verify` (deps + tests + build check + local
+  Docker build, per service) then `verify-compose` (config, build, boot, gateway
+  health check). Images are **not** pushed on PRs.
+- **Pushes to `main`** additionally run `publish`, which pushes each image to
+  Docker Hub tagged by commit SHA (`sha-<short>`) — never `latest`.
+
+Gateway health route used by CI: `http://localhost:8080/service-a/health`.
+
+Required GitHub settings (Settings → Secrets and variables → Actions):
+- Variable **`DOCKERHUB_USERNAME`**
+- Secret **`DOCKERHUB_TOKEN`**
+
+### Latest deployed version
+
+> Fill in the real commit hash after the first publish to `main`.
+
+```
+Commit:     <full-commit-hash>
+Image tag:  sha-<short-commit-hash>
+Images:
+  mwikalik/devops-service-a:sha-<short-commit-hash>
+  mwikalik/devops-service-b:sha-<short-commit-hash>
+  mwikalik/devops-service-c:sha-<short-commit-hash>
+```
+
+### Deploy a specific version (production images from Docker Hub)
+
+```bash
+cp .env.example .env                       # fill in DOCKERHUB_USERNAME, APP_NAME, IMAGE_TAG
+export DOCKERHUB_USERNAME=mwikalik
+export APP_NAME=devops
+./scripts/deploy.sh sha-<short-commit-hash>
+```
+
+`deploy.sh` uses [`docker-compose.prod.yml`](docker-compose.prod.yml), which
+**pulls** the commit-pinned images (it never builds locally) and publishes only
+Nginx on host port `8080`; the `backend` network is internal.
+
+### Verify
+
+```bash
+docker compose -f docker-compose.prod.yml ps
+curl http://localhost:8080/service-a/health
+```
+
+---
+
+# Running with Docker (detailed)
+
+> This expands on [Running with Docker Compose](#running-with-docker-compose) above.
+> **Only Nginx publishes a host port (`8080`).** Services A/B/C are reachable only
+> inside the Compose network — hitting `localhost:3001/3002/3003` from the host
+> fails **by design** (that's the isolation working). Always go through
+> `http://localhost:8080/service-a/...`.
 
 ## Features
 
@@ -395,12 +459,9 @@ docker compose version
 
 ## Clone the Repository
 
-Clone the project and switch to the Docker feature branch:
-
 ```bash
 git clone https://github.com/mercykilonzo/Devops.git
 cd Devops
-git checkout feature/docker
 ```
 
 ## Build the Containers
@@ -436,21 +497,18 @@ docker compose up -d
 Ensure all services are running:
 
 ```bash
-docker ps
+docker compose ps
 ```
 
-Expected output should include:
-
-* service-a
-* service-b
-* service-c
+Expected: `nginx` (publishing `0.0.0.0:8080->80`) plus `service-a`, `service-b`,
+`service-c` — all showing `(healthy)`. A/B/C do **not** publish host ports.
 
 ## Test the Services
 
-### Service A Health Check
+### Service A Health Check (through Nginx)
 
 ```bash
-curl http://localhost:3001/health
+curl http://localhost:8080/service-a/health
 ```
 
 Expected response:
@@ -458,7 +516,9 @@ Expected response:
 ```json
 {
   "service": "service-a",
-  "status": "healthy"
+  "status": "healthy",
+  "port": 3001,
+  "message": "Hello service-a listening on 3001"
 }
 ```
 
@@ -466,7 +526,7 @@ Expected response:
 
 ```bash
 curl -H "X-Request-ID: docker-test" \
-http://localhost:3001/greet-service-b
+http://localhost:8080/service-a/greet-service-b
 ```
 
 Expected response:
@@ -523,17 +583,20 @@ To also remove associated volumes:
 docker compose down -v
 ```
 
-## Project Structure
+## Project Structure (container-related files)
 
 ```
 .
-├── docker-compose.yml
+├── docker-compose.yml          # dev stack (builds locally)
+├── docker-compose.prod.yml     # prod stack (pulls published images)
 ├── .dockerignore
+├── .env.example
+├── .github/workflows/container-ci-cd.yml
+├── nginx/nginx-docker.conf     # Nginx config used by the containers
 └── services
-    ├── service-a
-    │   └── Dockerfile
-    ├── service-b
-    │   └── Dockerfile
-    └── service-c
-        └── Dockerfile
+    ├── service-a/Dockerfile
+    ├── service-b/Dockerfile
+    └── service-c/Dockerfile
 ```
+
+See [Repository layout](#repository-layout) above for the full tree.

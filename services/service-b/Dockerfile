@@ -18,6 +18,11 @@ ENV PYTHONPATH=/app
 
 WORKDIR /app/service-b
 
+# Run as a non-root user (gunicorn's control socket needs a writable HOME).
+RUN useradd --system --create-home --shell /usr/sbin/nologin appuser \
+    && chown -R appuser:appuser /app
+USER appuser
+
 EXPOSE 3002
 
 CMD ["gunicorn", "service_b.wsgi:application", "--bind", "0.0.0.0:3002", "--workers", "2"]
