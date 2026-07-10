@@ -1,316 +1,284 @@
-# Production-Style Service Environment
+# Microservices Observability Lab
 
-Three internal HTTP services (A, B, C) behind an Nginx reverse proxy, deployed
-on a single Ubuntu VM and operated like a small production system:
-
-- **Service discovery** by name (no hardcoded IPs)
-- **Network isolation** — only the proxy is public; B and C are unreachable from outside
-- **systemd** lifecycle management with dependency ordering and auto-restart
-- **Structured JSON logging** to the system journal
-- **End-to-end request tracing** with a single correlation id
-
-Built in **Python + Django**, served by **gunicorn**. Reverse proxy: **Nginx**.
-Firewall: **UFW**. Target OS: **Ubuntu 22.04 / 24.04**.
+A three-service Django platform with a full MELT observability stack:
+Prometheus · Grafana · Jaeger · Structured Logs · Alert Rules · Load Testing.
 
 ---
 
-## Table of contents
-
-1. [What it does](#what-it-does)
-2. [Architecture](#architecture)
-3. [API summary](#api-summary)
-4. [Run it locally](#run-it-locally)
-5. [Run it on a VM (production-style)](#run-it-on-a-vm-production-style)
-6. [Operating the services](#operating-the-services)
-7. [Validating the system](#validating-the-system)
-8. [Logs & request tracing](#logs--request-tracing)
-9. [Repository layout](#repository-layout)
-10. [Further documentation](#further-documentation)
-
----
-
-## What it does
-
-A single client request fans through all three services and back:
-
-```
-client → Nginx :80 /service-a/greet-service-b
-       → Service A  GET  /greet-service-b
-       → Service B  GET  /greet
-       → Service C  GET  /greet-c
-       → Service A  POST /greeting-rcvd      (callback from C)
-       ← {"status":"success"} unwinds back to the client
-```
-
-The same `X-Request-ID` is carried through every hop, so one request can be
-traced across all services in the logs.
-
-| Service | Port | Public? | Role |
-|---------|------|---------|------|
-| **Service A** | 3001 | Yes (via Nginx) | Public entry point; starts the flow; receives the final callback |
-| **Service B** | 3002 | No (internal) | Receives from A, forwards to C |
-| **Service C** | 3003 | No (internal) | Processes, then calls back to A |
-| **Nginx** | 80 | Yes | Reverse proxy — the only public entry point |
-
----
-
-## Architecture
-
-```
-                    ┌───────────────────── Ubuntu VM ─────────────────────┐
- client ── :80 ───► │  Nginx  ──/service-a/──►  127.0.0.1:3001  Service A  │
-                    │                                  │  GET /greet        │
-   ✗ :3001/2/3      │                                  ▼                    │
- (loopback bind +   │                          127.0.0.1:3002  Service B    │
-  UFW block)        │                                  │  GET /greet-c      │
-                    │                                  ▼                    │
-                    │                          127.0.0.1:3003  Service C    │
-                    │   POST /greeting-rcvd  ◄─────────┘  (callback to A)    │
-                    │                                                       │
-                    │  discovery: /etc/hosts (*.internal → 127.0.0.1)        │
-                    │  lifecycle: systemd     logs: journald (journalctl)    │
-                    └───────────────────────────────────────────────────────┘
-```
-
-Each service is a small Django project served by gunicorn with **2 workers**.
-Two workers matter: while Service A waits on B, Service C calls *back* into A —
-a second worker handles that callback (one worker would deadlock the flow).
-
-Full details: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
-
----
-
-## API summary
-
-Complete request/response shapes, the trace header, the log format, and error
-codes are in **[`docs/API_CONTRACT.md`](docs/API_CONTRACT.md)**. At a glance:
-
-| Service | Endpoint | Purpose |
-|---------|----------|---------|
-| A | `GET /health` | health check |
-| A | `GET /greet-service-b` | start the flow; returns `{"status":"success",...}` |
-| A | `POST /greeting-rcvd` | receive C's callback; returns `{"status":"received"}` |
-| B | `GET /health` | health check |
-| B | `GET /greet` | forward to C; returns `{"status":"forwarded",...}` |
-| C | `GET /health` | health check |
-| C | `GET /greet-c` | process + call back A; returns `{"status":"processed",...}` |
-
-Publicly, everything is reached through Nginx under `/service-a/`
-(e.g. `http://<host>/service-a/health`). B and C have no public route.
-
----
-
-## Run it locally
-
-For development on a laptop (macOS/Linux) — no Nginx, systemd, or VM needed.
-All three services run on `127.0.0.1` and talk to each other directly.
+## Quick Start
 
 ```bash
-git clone git@github.com:mercykilonzo/Devops.git
+git clone https://github.com/mercykilonzo/Devops.git
 cd Devops
-
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r services/service-a/requirements.txt   # Django + gunicorn
-
-./scripts/run-local.sh        # starts A, B, C; Ctrl-C stops them
+git checkout develop
+docker compose up --build
 ```
 
-In a second terminal:
-
-```bash
-curl -s http://127.0.0.1:3001/health     # Service A
-curl -s http://127.0.0.1:3002/health     # Service B
-curl -s http://127.0.0.1:3003/health     # Service C
-
-# full end-to-end flow:
-curl -s -H "X-Request-ID: t1" http://127.0.0.1:3001/greet-service-b
-# → {"request_id":"t1","status":"success","message":"Request completed successfully"}
-```
-
-The `run-local` terminal prints each service's JSON logs, so you can watch `t1`
-travel A → B → C → A and complete.
-
-> If you see `Address already in use`, a previous run is still up:
-> `pkill -f gunicorn` then re-run. If you see `No module named django`, the venv
-> isn't active or deps aren't installed — `source .venv/bin/activate` and
-> `pip install -r services/service-a/requirements.txt`.
-
----
-
-## Run it on a VM (production-style)
-
-This deploys the full stack — gunicorn services under systemd, Nginx reverse
-proxy, service discovery, and the UFW firewall — on an Ubuntu VM. **One command
-does everything.**
-
-### Prerequisites
-- An Ubuntu 22.04 or 24.04 VM with `sudo` access and outbound internet (for `apt`)
-- Inbound port **80** reachable (public entry) and **22** for SSH
-
-### Deploy
-
-```bash
-# on the VM:
-git clone git@github.com:mercykilonzo/Devops.git
-cd Devops
-sudo ./scripts/install.sh
-```
-
-`install.sh` is **idempotent** (safe to re-run) and performs every step:
-
-| Step | What it does |
-|------|--------------|
-| 1 | Installs `nginx`, `curl`, `python3`, Django + gunicorn (via `apt`; pip fallback) |
-| 2 | Creates the `platform` system user (no login shell) |
-| 3 | Copies the app to `/opt/platform` and sets ownership |
-| 4 | Writes service-discovery entries to `/etc/hosts` (`*.internal → 127.0.0.1`) |
-| 5 | Installs + enables the three systemd units |
-| 6 | Installs the Nginx site, runs `nginx -t`, reloads |
-| 7 | Configures UFW (allows **22** and **80** only) |
-| 8 | Starts the services in dependency order (C → B → A) |
-
-### Verify the deployment
-
-```bash
-sudo /opt/platform/scripts/healthcheck.sh    # all three respond
-sudo /opt/platform/scripts/smoke-test.sh     # full flow + request trace from journald
-```
-
-### Access it
-From the VM (or any host that can reach port 80):
+Wait ~30 seconds for all services to start, then verify:
 
 ```bash
 curl http://localhost/service-a/health
-curl -H "X-Request-ID: demo-1" http://localhost/service-a/greet-service-b
 ```
 
-### Redeploying after code changes
-Re-run the installer (it re-copies `services/` and restarts):
-
-```bash
-cd Devops && git pull && sudo ./scripts/install.sh
-```
-
-### Removing it
-
-```bash
-sudo /opt/platform/scripts/uninstall.sh
-```
-
-> A manual, step-by-step version of the deploy (equivalent to `install.sh`) is
-> in [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
-
----
-
-## Operating the services
-
-All three run as standard systemd units, managed with normal commands:
-
-```bash
-# status
-systemctl status service-a service-b service-c
-
-# start / stop / restart
-sudo systemctl start service-a        # pulls in B and C (Requires=)
-sudo systemctl stop  service-a service-b service-c
-sudo systemctl restart service-b
-
-# enable / disable auto-start on boot
-sudo systemctl enable  service-a service-b service-c
-sudo systemctl disable service-a service-b service-c
-
-# reload Nginx after a config change
-sudo nginx -t && sudo systemctl reload nginx
-```
-
-**Dependencies & resilience:**
-- Service A `Requires=` and starts `After=` B and C, and runs a readiness gate
-  (`wait-for-deps.sh`) that waits for B's and C's `/health` before it boots.
-- `Restart=always` — systemd revives any service that crashes.
-- Because A hard-requires B and C, stopping B or C also stops A (fail-fast); the
-  public endpoint then returns 502 until dependencies are back.
-
----
-
-## Validating the system
-
-```bash
-# health (public path through Nginx + internal direct)
-sudo /opt/platform/scripts/healthcheck.sh
-
-# end-to-end flow with a traced request id
-sudo /opt/platform/scripts/smoke-test.sh
-```
-
-**Network isolation** (these should behave as noted):
-
-```bash
-# services listen on loopback only:
-sudo ss -ltnp | grep -E ':3001|:3002|:3003'      # all show 127.0.0.1:<port>
-
-# firewall allows only SSH + HTTP:
-sudo ufw status verbose                           # 22 and 80 only
-
-# B and C are NOT reachable on the VM's external IP (only Nginp/:80 is):
-curl http://<VM_IP>/service-a/health              # works (200)
-curl http://<VM_IP>:3002/health                   # refused
-curl http://<VM_IP>:3003/health                   # refused
+Expected:
+```json
+{"service": "service-a", "status": "ok", "port": 3001, "dependencies": {"service-b": "ok"}}
 ```
 
 ---
 
-## Logs & request tracing
+## Stack Access
 
-Each service writes one JSON object per line to stdout, captured by the journal.
-
-```bash
-# one service
-journalctl -u service-a -f
-
-# all three together (best for tracing)
-journalctl -t service-a -t service-b -t service-c -o cat
-
-# Nginx access log (structured JSON)
-sudo tail -f /var/log/nginx/platform_access.json
-```
-
-Trace a single request end-to-end:
-
-```bash
-RID="trace-$(date +%s)"
-curl -s -H "X-Request-ID: $RID" http://localhost/service-a/greet-service-b
-journalctl -t service-a -t service-b -t service-c -o cat | grep "$RID"
-```
-
-You'll see the id pass through `request_received` (A) → `request_forwarded` (B)
-→ `callback_sent` (C) → `callback_received` (A) → `flow_completed` (A).
+| Service    | URL                        | Credentials       |
+|------------|----------------------------|-------------------|
+| Gateway    | http://localhost            | —                 |
+| Service A  | http://localhost/service-a/ | via Nginx only    |
+| Prometheus | http://localhost:9090       | —                 |
+| Grafana    | http://localhost:3000       | admin / admin     |
+| Jaeger UI  | http://localhost:16686      | —                 |
 
 ---
 
-## Repository layout
+## How to Stop the Stack
 
+```bash
+docker compose down          # stop containers, keep volumes
+docker compose down -v       # stop containers AND delete volumes (resets Prometheus data)
 ```
-Devops/
-├── README.md                     # this file
-├── services/
-│   ├── lib/                      # shared helpers: logger, util, http_client
-│   ├── service-a/                # public entry + callback receiver (Django)
-│   ├── service-b/                # forwarder (Django)
-│   └── service-c/                # processor + callback sender (Django)
-├── nginx/platform.conf           # reverse proxy + JSON access log
-├── systemd/                      # service-a/b/c.service units
-├── scripts/                      # install, run-local, healthcheck, smoke-test, ...
-└── docs/                         # API_CONTRACT, ARCHITECTURE, RUNBOOK, TROUBLESHOOTING
-```
-
-Each `services/service-*/` folder has its own README describing that service.
 
 ---
 
-## Further documentation
+## How to View Metrics
 
-- **[`docs/API_CONTRACT.md`](docs/API_CONTRACT.md)** — endpoints, request/response shapes, logging format, trace header, error codes
-- **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)** — components, request flow, design decisions
-- **[`docs/RUNBOOK.md`](docs/RUNBOOK.md)** — deploy/operate procedures, manual install
-- **[`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)** — diagnosing common failures
+**In Prometheus:**
+1. Open http://localhost:9090
+2. Click **Status → Targets** — all three services should show `UP`
+3. Try these queries in the expression bar:
+   ```promql
+   http_requests_total
+   rate(http_requests_total[1m])
+   rate(http_errors_total[2m])
+   histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))
+   up
+   ```
+
+**In Grafana:**
+1. Open http://localhost:3000 (admin / admin)
+2. Go to **Dashboards → Microservices Overview**
+3. Panels: Service Up/Down · Request Rate · Error Rate · p95 Latency · Total Requests
+
+**Raw metrics endpoint (per service):**
+```bash
+curl http://localhost/service-a/metrics
+# or direct (bypassing nginx):
+# curl http://localhost:3001/metrics  (service-a exposed via port mapping)
+```
+
+---
+
+## How to View Traces
+
+1. Open Jaeger at http://localhost:16686
+2. In the **Service** dropdown, select `service-a`
+3. Click **Find Traces**
+4. Click any trace to expand the span waterfall
+
+**To generate a fresh trace:**
+```bash
+curl http://localhost/service-a/greet-service-b
+```
+
+Expected trace path:
+```
+service-a  /greet-service-b
+  └── service-b  /greet
+        └── service-c  /greet-c
+              └── service-a  /greeting-rcvd  (callback)
+```
+
+---
+
+## How to View Logs
+
+```bash
+# All services together (follow mode)
+docker compose logs -f
+
+# One service
+docker compose logs service-a
+docker compose logs service-b
+docker compose logs service-c
+
+# Last 50 lines, follow
+docker compose logs -f --tail=50 service-a
+```
+
+Each log line is structured JSON:
+```json
+{
+  "timestamp": "2026-07-10T08:00:00.000000Z",
+  "service": "service-a",
+  "event": "flow_completed",
+  "request_id": "abc-123",
+  "trace_id": "abc-123",
+  "method": "GET",
+  "path": "/greet-service-b",
+  "status": 200,
+  "duration_ms": 34
+}
+```
+
+---
+
+## How to Run Load Tests
+
+```bash
+# Install ab first (if not already installed)
+sudo apt install apache2-utils
+
+# Individual scenarios
+./scripts/load-test.sh normal    # 500 requests, 10 concurrent — baseline
+./scripts/load-test.sh stress    # 2000 requests, 50 concurrent — watch latency climb
+./scripts/load-test.sh failure   # 300 requests to /fail — triggers error alert
+
+# All three in sequence
+./scripts/load-test.sh all
+```
+
+Watch Grafana while the load test runs to see metrics change in real time.
+
+---
+
+## How to Trigger Failure
+
+### Failure A: Service Down
+```bash
+# Stop a dependency
+docker compose stop service-b
+
+# Watch health check degrade
+curl http://localhost/service-a/health
+# Returns: {"status": "degraded", "dependencies": {"service-b": "unreachable"}}
+
+# Watch Prometheus target go down (within 15s)
+# http://localhost:9090/targets
+
+# Restore
+docker compose start service-b
+```
+
+### Failure B: High Latency
+```bash
+# Hit the slow endpoint (2s artificial delay)
+curl http://localhost/service-a/slow
+
+# Hammer it to trigger the HighLatency alert
+for i in $(seq 1 20); do curl -s http://localhost/service-a/slow & done; wait
+
+# Check Jaeger — the /slow span will show ~2000ms duration
+# Check Grafana — p95 latency panel will spike above 0.5s
+```
+
+### Failure C: High Error Rate
+```bash
+# Hit the fail endpoint
+curl http://localhost/service-a/fail
+
+# Hammer it to trigger the HighErrorRate alert
+./scripts/load-test.sh failure
+
+# Check logs
+docker compose logs service-a | grep fail_endpoint
+```
+
+---
+
+## How to Confirm Alerts
+
+**In Prometheus:**
+1. Open http://localhost:9090/alerts
+2. Alerts shown in three states: `inactive` (condition not met), `pending` (within `for` window), `firing` (alert active)
+
+**Verify via API:**
+```bash
+curl -s http://localhost:9090/api/v1/rules | python3 -m json.tool | grep -E '"name"|"state"'
+```
+
+**The three alert rules:**
+
+| Alert | Condition | For |
+|-------|-----------|-----|
+| ServiceDown | `up == 0` | 1 min |
+| HighErrorRate | `rate(http_errors_total[2m]) > 0.1` | 2 min |
+| HighLatency | `histogram_quantile(0.95, ...) > 0.5` | 2 min |
+
+To reproduce each one, see *How to Trigger Failure* above.
+
+---
+
+## Repository Structure
+
+```
+.
+├── docker-compose.yml          # Full stack: app + observability services
+├── prometheus.yml              # Scrape config for all three services
+├── alert-rules.yml             # ServiceDown, HighErrorRate, HighLatency
+├── README.md                   # This file
+├── grafana/
+│   ├── provisioning/
+│   │   ├── datasources/        # Auto-provisions Prometheus data source
+│   │   └── dashboards/         # Auto-loads dashboards on startup
+│   └── dashboards/
+│       └── services.json       # Microservices Overview dashboard
+├── jaeger/
+│   └── README.md               # Jaeger usage and demo walkthrough
+├── nginx/
+│   ├── platform.conf           # VM/bare-metal nginx config
+│   └── docker.conf             # Docker Compose nginx config
+├── scripts/
+│   └── load-test.sh            # Normal / stress / failure scenarios
+├── docs/
+│   ├── architecture.md         # Request flow, telemetry flow, ASCII diagrams
+│   ├── benchmark-report.md     # Load test results and lessons learned
+│   ├── API_CONTRACT.md         # Endpoint reference
+│   ├── RUNBOOK.md              # Operational runbook
+│   └── TROUBLESHOOTING.md      # Common issues and fixes
+└── services/
+    ├── lib/                    # Shared: logger, http_client, util, metrics
+    ├── service-a/              # Public entry point (Django + Gunicorn)
+    ├── service-b/              # Internal forwarder
+    └── service-c/              # Internal processor + callback
+```
+
+---
+
+## MELT Signal Summary
+
+| Signal  | Implementation | Where to view |
+|---------|---------------|---------------|
+| Metrics | `prometheus_client` — `/metrics` on each service | Prometheus, Grafana |
+| Events  | Structured log events: `deployment_started`, `load_test_started`, `fail_endpoint_called` | `docker compose logs` |
+| Logs    | JSON to stdout — `timestamp`, `service`, `event`, `request_id`, `trace_id`, `duration_ms` | `docker compose logs` |
+| Traces  | `X-Request-ID` propagated A→B→C→A; OTLP spans to Jaeger | Jaeger UI |
+
+---
+
+## Controlled Failure Endpoints (LAB ONLY)
+
+| Endpoint | Service | Effect | Triggers alert |
+|----------|---------|--------|----------------|
+| `/service-a/slow` | service-a | 2-second delay | HighLatency |
+| `/service-a/fail` | service-a | Returns 500 | HighErrorRate |
+| `docker compose stop service-b` | service-b | Takes service down | ServiceDown |
+
+These endpoints are clearly marked as lab-only in the code.
+
+---
+
+## Operational Principle
+
+> **Metrics tell us something is wrong.**
+> **Logs explain what happened.**
+> **Traces show where it happened.**
+> **Events show what changed.**
+> **Alerts call attention to the issue.**
