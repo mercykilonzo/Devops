@@ -14,12 +14,11 @@ from datetime import datetime, timezone
 
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.http import require_http_methods
-from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 from lib.logger import log
 from lib.http_client import request_json
 from lib.util import get_request_id
-from lib.metrics import REQUEST_COUNT, REQUEST_LATENCY, ERROR_COUNT, SERVICE_UP
+from lib.metrics import REQUEST_COUNT, REQUEST_LATENCY, ERROR_COUNT, SERVICE_UP, render_metrics
 
 SERVICE = 'service-c'
 PORT = int(os.environ.get('PORT', '3003'))
@@ -47,7 +46,8 @@ def health(request):
 
 @require_http_methods(['GET'])
 def metrics(request):
-    return HttpResponse(generate_latest(), content_type=CONTENT_TYPE_LATEST)
+    body, content_type = render_metrics()
+    return HttpResponse(body, content_type=content_type)
 
 
 @require_http_methods(['GET'])
