@@ -216,6 +216,50 @@ To reproduce each one, see *How to Trigger Failure* above.
 
 ---
 
+## Running on a VM (production-style)
+
+Besides Docker Compose, the same services run directly on an Ubuntu VM under
+systemd + Nginx + UFW (this is the CI/CD deployment target). **One command does
+everything:**
+
+```bash
+# on the VM:
+git clone git@github.com:mercykilonzo/Devops.git
+cd Devops
+sudo ./scripts/install.sh          # idempotent; safe to re-run
+```
+
+`install.sh` installs dependencies, creates the `platform` user, deploys to
+`/opt/platform`, writes `*.internal` service-discovery entries to `/etc/hosts`,
+installs the three systemd units, configures Nginx, and locks UFW down to ports
+**22 + 80**. A manual step-by-step equivalent is in [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
+
+**Operating the services (systemd):**
+```bash
+systemctl status service-a service-b service-c
+sudo systemctl restart service-b
+sudo systemctl enable service-a service-b service-c   # auto-start on boot
+sudo nginx -t && sudo systemctl reload nginx          # after a config change
+```
+Service A `Requires=`/`After=` B and C with a readiness gate (`wait-for-deps.sh`),
+and every unit is `Restart=always`.
+
+**Validate deployment + network isolation:**
+```bash
+sudo /opt/platform/scripts/healthcheck.sh    # all three respond
+sudo /opt/platform/scripts/smoke-test.sh      # full flow + traced request id
+
+sudo ss -ltnp | grep -E ':3001|:3002|:3003'  # all bound to 127.0.0.1 only
+sudo ufw status verbose                        # 22 and 80 only
+curl http://<VM_IP>:3002/health               # refused (B/C not public)
+```
+
+Mapping from Compose → VM: Compose DNS ↔ `/etc/hosts` names ·
+`docker compose logs` ↔ `journalctl` · Docker network + single published port ↔
+loopback bind + UFW.
+
+---
+
 ## Repository Structure
 
 ```
