@@ -2,7 +2,7 @@ name: Container CI/CD
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, develop]
   push:
     branches: [main]
   workflow_dispatch:
@@ -76,22 +76,39 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Validate Compose file
+      - name: Validate Compose file (dev)
         run: docker compose config
+
+      - name: Validate Compose file (prod)
+        # Prove the prod file is well-formed with dummy vars, so a broken
+        # docker-compose.prod.yml can never reach main.
+        env:
+          DOCKERHUB_USERNAME: ci-dummy
+          APP_NAME: devops
+          IMAGE_TAG: sha-0000000
+        run: docker compose -f docker-compose.prod.yml config
 
       - name: Build Compose stack
         run: docker compose build --pull
 
-      - name: Start Compose stack
-        run: docker compose up -d
+      - name: Start Compose stack (wait for healthy)
+        # --wait blocks until every service passes its health check, so we no
+        # longer guess with `sleep`. Fails the job if anything is unhealthy.
+        run: docker compose up -d --wait
 
       - name: Show running services
         run: docker compose ps
 
       - name: Check gateway health (through Nginx)
+        run: curl --fail http://localhost:8080/service-a/health
+
+      - name: End-to-end flow across A -> B -> C
+        # The whole point of the architecture: prove the request chain works,
+        # not just that containers boot.
         run: |
-          sleep 10
-          curl --fail http://localhost:8080/service-a/health
+          body=$(curl --fail --silent http://localhost:8080/service-a/greet-service-b)
+          echo "$body"
+          echo "$body" | grep -q '"status": *"success"'
 
       - name: Stop Compose stack
         if: always()
