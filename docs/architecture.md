@@ -126,6 +126,7 @@ See [`API_CONTRACT.md`](API_CONTRACT.md) for the per-service interface.
 
 - Jaeger uses in-memory storage. Traces are lost on container restart.
 - Prometheus retention defaults to 15 days. Use `--storage.tsdb.retention.time` to change.
-- Services use `X-Request-ID` for correlation, not a full OpenTelemetry trace context.
-  Spans are emitted but correlation across services in Jaeger relies on the request ID.
+- `X-Request-ID` is used for log correlation. Distributed tracing uses W3C trace
+  context (`traceparent`), propagated automatically by the OpenTelemetry urllib
+  instrumentation, so spans from all services link into a single trace in Jaeger.
 - No TLS. This is a lab stack, not a production deployment.
