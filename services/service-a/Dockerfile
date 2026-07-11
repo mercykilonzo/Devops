@@ -1,11 +1,6 @@
-FROM python:3.12-slim
+FROM python:3.12.13-slim
 
 WORKDIR /app
-
-# curl: used by the internal service-discovery validation test and for debugging
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
-    && rm -rf /var/lib/apt/lists/*
 
 COPY services/service-a/requirements.txt .
 

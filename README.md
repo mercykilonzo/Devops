@@ -17,7 +17,7 @@ docker compose up --build
 Wait ~30 seconds for all services to start, then verify:
 
 ```bash
-curl http://localhost/service-a/health
+curl http://localhost:8080/service-a/health
 ```
 
 Expected:
@@ -31,8 +31,8 @@ Expected:
 
 | Service    | URL                        | Credentials       |
 |------------|----------------------------|-------------------|
-| Gateway    | http://localhost            | —                 |
-| Service A  | http://localhost/service-a/ | via Nginx only    |
+| Gateway    | http://localhost:8080           | —                 |
+| Service A  | http://localhost:8080/service-a/ | via Nginx only    |
 | Prometheus | http://localhost:9090       | —                 |
 | Grafana    | http://localhost:3000       | admin / admin     |
 | Jaeger UI  | http://localhost:16686      | —                 |
@@ -69,7 +69,7 @@ docker compose down -v       # stop containers AND delete volumes (resets Promet
 
 **Raw metrics endpoint (per service):**
 ```bash
-curl http://localhost/service-a/metrics
+curl http://localhost:8080/service-a/metrics
 # or direct (bypassing nginx):
 # curl http://localhost:3001/metrics  (service-a exposed via port mapping)
 ```
@@ -85,7 +85,7 @@ curl http://localhost/service-a/metrics
 
 **To generate a fresh trace:**
 ```bash
-curl http://localhost/service-a/greet-service-b
+curl http://localhost:8080/service-a/greet-service-b
 ```
 
 Expected trace path:
@@ -157,7 +157,7 @@ Watch Grafana while the load test runs to see metrics change in real time.
 docker compose stop service-b
 
 # Watch health check degrade
-curl http://localhost/service-a/health
+curl http://localhost:8080/service-a/health
 # Returns: {"status": "degraded", "dependencies": {"service-b": "unreachable"}}
 
 # Watch Prometheus target go down (within 15s)
@@ -170,10 +170,10 @@ docker compose start service-b
 ### Failure B: High Latency
 ```bash
 # Hit the slow endpoint (2s artificial delay)
-curl http://localhost/service-a/slow
+curl http://localhost:8080/service-a/slow
 
 # Hammer it to trigger the HighLatency alert
-for i in $(seq 1 20); do curl -s http://localhost/service-a/slow & done; wait
+for i in $(seq 1 20); do curl -s http://localhost:8080/service-a/slow & done; wait
 
 # Check Jaeger — the /slow span will show ~2000ms duration
 # Check Grafana — p95 latency panel will spike above 0.5s
@@ -182,7 +182,7 @@ for i in $(seq 1 20); do curl -s http://localhost/service-a/slow & done; wait
 ### Failure C: High Error Rate
 ```bash
 # Hit the fail endpoint
-curl http://localhost/service-a/fail
+curl http://localhost:8080/service-a/fail
 
 # Hammer it to trigger the HighErrorRate alert
 ./scripts/load-test.sh failure
@@ -278,7 +278,7 @@ loopback bind + UFW.
 │   └── README.md               # Jaeger usage and demo walkthrough
 ├── nginx/
 │   ├── platform.conf           # VM/bare-metal nginx config
-│   └── docker.conf             # Docker Compose nginx config
+│   └── nginx-docker.conf      # Docker Compose nginx config
 ├── scripts/
 │   └── load-test.sh            # Normal / stress / failure scenarios
 ├── docs/
