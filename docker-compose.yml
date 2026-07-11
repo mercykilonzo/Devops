@@ -24,6 +24,7 @@ services:
       context: .
       dockerfile: services/service-a/Dockerfile
     container_name: service-a
+    command: gunicorn service_a.wsgi:application --bind 0.0.0.0:3001 --workers 4 --timeout 30
     environment:
       SERVICE_B_URL: http://service-b:3002
       SERVICE_C_URL: http://service-c:3003
@@ -54,6 +55,7 @@ services:
       context: .
       dockerfile: services/service-b/Dockerfile
     container_name: service-b
+    command: gunicorn service_b.wsgi:application --bind 0.0.0.0:3002 --workers 4 --timeout 30
     environment:
       SERVICE_C_URL: http://service-c:3003
       PORT: 3002
@@ -77,6 +79,7 @@ services:
       context: .
       dockerfile: services/service-c/Dockerfile
     container_name: service-c
+    command: gunicorn service_c.wsgi:application --bind 0.0.0.0:3003 --workers 4 --timeout 30
     environment:
       SERVICE_A_URL: http://service-a:3001
       PORT: 3003
