@@ -1,4 +1,22 @@
+# Keep build context small and free of local/secret files.
 .venv
 .git
+.github
 __pycache__
 *.pyc
+*.pyo
+
+# Local env / secrets — never bake into images
+.env
+.env.*
+!.env.example
+
+# Logs and OS cruft
+*.log
+.DS_Store
+
+# Node (in case any tooling is added later)
+node_modules
+
+# Docs and CI are not needed inside images
+docs
