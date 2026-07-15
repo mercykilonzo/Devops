@@ -1,0 +1,64 @@
+groups:
+  - name: service_alerts
+    rules:
+
+      # Alert 1: Service Down
+      # Fires when Prometheus cannot scrape a service for 1 minute.
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: >
+            Prometheus cannot reach {{ $labels.job }} at {{ $labels.instance }}.
+            The service process may have crashed, the container may have stopped,
+            or the /metrics endpoint is unreachable.
+          runbook: |
+            1. docker compose ps
+            2. docker compose logs <service>
+            3. curl http://<service>:<port>/health
+            4. docker compose restart <service>
+
+      # Alert 2: High Error Rate
+      # Fires when more than 10 errors per second occur over a 2-minute window.
+      - alert: HighErrorRate
+        expr: rate(http_errors_total[2m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate on {{ $labels.job }}"
+          description: >
+            {{ $labels.job }} is returning errors at
+            {{ printf "%.2f" $value }} errors/sec (threshold: 0.1/sec).
+            This may indicate a downstream dependency failure or application bug.
+          runbook: |
+            1. curl http://localhost/service-a/health (check dependency status)
+            2. docker compose logs service-a service-b service-c
+            3. Hit /service-c/fail to reproduce: curl http://localhost/service-a/greet-service-b
+            4. Check Jaeger for failed spans at http://localhost:16686
+
+      # Alert 3: High Latency (p95 > 500ms)
+      # Fires when 95th-percentile request duration exceeds 500ms.
+      - alert: HighLatency
+        expr: >
+          histogram_quantile(
+            0.95,
+            rate(http_request_duration_seconds_bucket[5m])
+          ) > 0.5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High p95 latency on {{ $labels.job }}"
+          description: >
+            p95 latency for {{ $labels.job }} is {{ printf "%.2f" $value }}s
+            (threshold: 0.5s). A slow downstream call or resource contention
+            is likely.
+          runbook: |
+            1. curl http://localhost/service-a/slow to reproduce
+            2. Open Jaeger (http://localhost:16686) and search service-a
+            3. Find the slow span — look for large gaps between child spans
+            4. docker compose logs service-b service-c for dependency clues

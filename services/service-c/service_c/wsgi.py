@@ -6,5 +6,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'service_c.settings')
 
+# Initialise OpenTelemetry before the app is built so Django/urllib get instrumented.
+from lib.tracing import init_tracing  # noqa: E402
+init_tracing('service-c')
+
 from django.core.wsgi import get_wsgi_application  # noqa: E402
 application = get_wsgi_application()

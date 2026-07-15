@@ -1,11 +1,6 @@
-FROM python:3.12-slim
+FROM python:3.12.13-slim
 
 WORKDIR /app
-
-# curl: used by the internal service-discovery validation test and for debugging
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
-    && rm -rf /var/lib/apt/lists/*
 
 COPY services/service-b/requirements.txt .
 
@@ -19,10 +14,12 @@ ENV PYTHONPATH=/app
 WORKDIR /app/service-b
 
 # Run as a non-root user (gunicorn's control socket needs a writable HOME).
+ENV PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus_multiproc
 RUN useradd --system --create-home --shell /usr/sbin/nologin appuser \
-    && chown -R appuser:appuser /app
+    && mkdir -p /tmp/prometheus_multiproc \
+    && chown -R appuser:appuser /app /tmp/prometheus_multiproc
 USER appuser
 
 EXPOSE 3002
 
-CMD ["gunicorn", "service_b.wsgi:application", "--bind", "0.0.0.0:3002", "--workers", "2"]
+CMD ["gunicorn", "service_b.wsgi:application", "-c", "/app/lib/gunicorn_conf.py", "--bind", "0.0.0.0:3002", "--workers", "2"]

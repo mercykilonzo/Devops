@@ -14,13 +14,13 @@
 services:
 
   service-a:
-    image: ${DOCKERHUB_USERNAME}/${APP_NAME}-service-a:${IMAGE_TAG}
+    image: ${DOCKERHUB_USERNAME:?Set DOCKERHUB_USERNAME}/${APP_NAME:?Set APP_NAME}-service-a:${IMAGE_TAG:?Set IMAGE_TAG (e.g. sha-a1b2c3d)}
     environment:
       SERVICE_B_URL: http://service-b:3002
       SERVICE_C_URL: http://service-c:3003
       PORT: 3001
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3001/health', timeout=2)"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -37,12 +37,12 @@ services:
     stop_grace_period: 30s
 
   service-b:
-    image: ${DOCKERHUB_USERNAME}/${APP_NAME}-service-b:${IMAGE_TAG}
+    image: ${DOCKERHUB_USERNAME:?Set DOCKERHUB_USERNAME}/${APP_NAME:?Set APP_NAME}-service-b:${IMAGE_TAG:?Set IMAGE_TAG (e.g. sha-a1b2c3d)}
     environment:
       SERVICE_C_URL: http://service-c:3003
       PORT: 3002
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3002/health', timeout=2)"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -53,12 +53,12 @@ services:
     stop_grace_period: 30s
 
   service-c:
-    image: ${DOCKERHUB_USERNAME}/${APP_NAME}-service-c:${IMAGE_TAG}
+    image: ${DOCKERHUB_USERNAME:?Set DOCKERHUB_USERNAME}/${APP_NAME:?Set APP_NAME}-service-c:${IMAGE_TAG:?Set IMAGE_TAG (e.g. sha-a1b2c3d)}
     environment:
       SERVICE_A_URL: http://service-a:3001
       PORT: 3003
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3003/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3003/health', timeout=2)"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -69,7 +69,7 @@ services:
     stop_grace_period: 30s
 
   nginx:
-    image: nginx:1.27-alpine
+    image: nginx:1.27.5-alpine
     ports:
       - "8080:80"                     # the ONLY host-published port
     volumes:
