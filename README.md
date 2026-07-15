@@ -10,7 +10,6 @@ Prometheus · Grafana · Jaeger · Structured Logs · Alert Rules · Load Testin
 ```bash
 git clone https://github.com/mercykilonzo/Devops.git
 cd Devops
-git checkout develop
 docker compose up --build
 ```
 
