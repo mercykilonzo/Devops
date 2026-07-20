@@ -2,6 +2,10 @@ FROM python:3.12.13-slim
 
 WORKDIR /app
 
+# Install curl for health checks
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY services/service-c/requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
@@ -13,7 +17,6 @@ ENV PYTHONPATH=/app
 
 WORKDIR /app/service-c
 
-# Run as a non-root user (gunicorn's control socket needs a writable HOME).
 ENV PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus_multiproc
 RUN useradd --system --create-home --shell /usr/sbin/nologin appuser \
     && mkdir -p /tmp/prometheus_multiproc \
