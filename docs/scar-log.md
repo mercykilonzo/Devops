@@ -96,3 +96,14 @@
 - Port: 3003
 - Inbound: Service B only (sg-0455e19278e08bab4)
 - Outbound: Service A only (sg-061002084678ef54c) on port 3001
+
+## Service B ECS Deployment — Health Check Failure
+
+- **Symptom:** Task kept cycling UNHEALTHY — ECS kept replacing it
+- **Hypothesis 1:** curl not installed in new Dockerfile
+- **Evidence:** New Dockerfile removed the apt-get install curl step
+- **Hypothesis 2:** Health check command syntax wrong in JSON
+- **Evidence:** CMD-SHELL with single quotes inside JSON failed silently
+- **Cause:** Two issues — no curl in image, and CMD-SHELL quoting problems
+- **Repair:** Switched to CMD ["python3", "-c", "..."] health check (task def revision 3)
+- **Prevention:** Always verify health check tool exists in container before deploying
