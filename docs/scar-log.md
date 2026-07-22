@@ -147,3 +147,11 @@
 - **Cause:** Intentional Gate 3B test
 - **Repair:** Service restored to revision 8 with correct SERVICE_A_URL and health check on port 3003
 - **Prevention:** Always verify health check port matches container port before deploying
+
+## Entry 13 — Health check failed: curl not in slim image
+- **Symptom:** Revision 8 and 10 failed container health checks, circuit breaker triggered rollback
+- **Hypothesis:** curl not installed in python:3.12-slim base image
+- **Evidence:** Task started successfully (gunicorn logs visible) but health check timed out
+- **Cause:** Health check used curl -f but python:3.12-slim does not include curl
+- **Repair:** Changed health check to python -c "import urllib.request; urllib.request.urlopen(...)"
+- **Prevention:** Never use curl in health checks for slim Python images — use urllib instead
