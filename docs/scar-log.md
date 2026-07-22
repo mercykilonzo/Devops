@@ -75,6 +75,39 @@
             attack surface. Always install any binary your health check needs.
             Alternative: use a Python-based health check that needs no binary.
 
+## 10. Service B ECS Deployment — Health Check Failure
+**Symptom:** Task kept cycling UNHEALTHY — ECS kept replacing it
+**Hypothesis 1:** curl not installed in new Dockerfile
+**Evidence:** New Dockerfile removed the apt-get install curl step
+**Hypothesis 2:** Health check command syntax wrong in JSON
+**Evidence:** CMD-SHELL with single quotes inside JSON failed silently
+**Cause:** Two issues — no curl in image, and CMD-SHELL quoting problems
+**Fix:** Switched to CMD ["python3", "-c", "..."] health check (task def revision 3)
+**Lesson:** Always verify health check tool exists in container before deploying.
+
+## 11. ECS Exec failed — missing taskRoleArn
+**Error:** `The service couldn't be updated because a valid taskRoleArn
+           is not being used`
+**Cause:** ECS Exec requires a task role (separate from execution role)
+           so the container can call AWS SSM APIs.
+**Fix:** Registered new task definition revision with both:
+           executionRoleArn: ECS-role-195f983e (pulls image, writes logs)
+           taskRoleArn:      ECS-role-195f983e (allows ECS Exec)
+**Lesson:** executionRoleArn = what ECS does on your behalf before
+            the container starts. taskRoleArn = what the running
+            container itself can do in AWS.
+
+## 12. Service Connect DNS name conflict
+**Error:** `ClientAlias service-c:3003 is already used by service
+           with discovery name service-c`
+**Cause:** Service Connect had already registered `service-c` as a
+           DNS name in the cluster namespace from a previous deployment.
+           Cannot register the same name twice.
+**Fix:** Used alternative DNS name `svc-c` for the client alias.
+**Lesson:** Service Connect DNS names are registered in a shared
+            namespace across the whole cluster. Coordinate naming
+            with your group before deploying.
+
 ## Resources Created
 | Resource | ID / ARN |
 |---|---|
@@ -85,25 +118,16 @@
 | SG inbound rule (B→C:3003) | sgr-037800b6c24415052 |
 | SG outbound rule (C→A:3001) | sgr-0e20a5df861d7eabb |
 | CloudWatch log group | /ecs/devops-g4-service-c |
-| Task definition :1 | arn:aws:ecs:us-west-2:827478161993:task-definition/devops-g4-service-c:1 |
-| Task definition :2 | arn:aws:ecs:us-west-2:827478161993:task-definition/devops-g4-service-c:2 |
+| Task definition :5 (final) | arn:aws:ecs:us-west-2:827478161993:task-definition/devops-g4-service-c:5 |
 | ECS service | arn:aws:ecs:us-west-2:827478161993:service/devops-g4-cluster/devops-g4-service-c |
-| Private IP (current task) | 172.31.28.248 |
+| Private IP (current task) | 172.31.18.142 |
 
 ## Final Status
 - Task: RUNNING
 - Health: HEALTHY
 - Port: 3003
+- ECS Exec: enabled
+- Circuit breaker + rollback: enabled
+- Service Connect DNS: svc-c
 - Inbound: Service B only (sg-0455e19278e08bab4)
 - Outbound: Service A only (sg-061002084678ef54c) on port 3001
-
-## Service B ECS Deployment — Health Check Failure
-
-- **Symptom:** Task kept cycling UNHEALTHY — ECS kept replacing it
-- **Hypothesis 1:** curl not installed in new Dockerfile
-- **Evidence:** New Dockerfile removed the apt-get install curl step
-- **Hypothesis 2:** Health check command syntax wrong in JSON
-- **Evidence:** CMD-SHELL with single quotes inside JSON failed silently
-- **Cause:** Two issues — no curl in image, and CMD-SHELL quoting problems
-- **Repair:** Switched to CMD ["python3", "-c", "..."] health check (task def revision 3)
-- **Prevention:** Always verify health check tool exists in container before deploying
