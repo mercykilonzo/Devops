@@ -131,3 +131,19 @@
 - Service Connect DNS: svc-c
 - Inbound: Service B only (sg-0455e19278e08bab4)
 - Outbound: Service A only (sg-061002084678ef54c) on port 3001
+
+## Entry 10 — Pipeline S3 permissions missing
+- **Symptom:** CodeBuild failed with AccessDenied on S3 GetObject
+- **Hypothesis:** CodeBuild role missing S3 read permissions
+- **Evidence:** Error: `s3:GetObject` not authorized on pipeline artifacts bucket
+- **Cause:** CodeBuild role had ECR and ECS permissions but no S3 policy
+- **Repair:** Attached AmazonS3FullAccess to devops-g4-service-c-codebuild-role
+- **Prevention:** Always attach S3 access to CodeBuild roles when using CodePipeline artifact store
+
+## Entry 12 — Circuit breaker rollback test
+- **Symptom:** Deployed revision 9 with health check pointing to wrong port 9999
+- **Hypothesis:** Circuit breaker would detect failures and roll back automatically
+- **Evidence:** Revision 9 rolloutState changed to FAILED, ECS automatically restored revision 5, then updated to revision 8
+- **Cause:** Intentional Gate 3B test
+- **Repair:** Service restored to revision 8 with correct SERVICE_A_URL and health check on port 3003
+- **Prevention:** Always verify health check port matches container port before deploying
