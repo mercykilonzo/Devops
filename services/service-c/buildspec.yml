@@ -1,0 +1,39 @@
+version: 0.2
+
+env:
+  variables:
+    AWS_ACCOUNT_ID: "827478161993"
+    AWS_REGION: "us-west-2"
+    ECR_REPO: "devops-g4-service-c"
+    ECS_CLUSTER: "devops-g4-cluster"
+    ECS_SERVICE: "devops-g4-service-c"
+
+phases:
+  pre_build:
+    commands:
+      - echo Logging in to Amazon ECR...
+      - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+      - IMAGE_TAG=sha-$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c1-7)
+      - REPO_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO
+      - echo Image tag will be $IMAGE_TAG
+
+  build:
+    commands:
+      - echo Building Docker image...
+      - docker build -t $ECR_REPO:$IMAGE_TAG -f services/service-c/Dockerfile .
+      - docker tag $ECR_REPO:$IMAGE_TAG $REPO_URI:$IMAGE_TAG
+      - docker tag $ECR_REPO:$IMAGE_TAG $REPO_URI:latest
+
+  post_build:
+    commands:
+      - echo Pushing image to ECR...
+      - docker push $REPO_URI:$IMAGE_TAG
+      - docker push $REPO_URI:latest
+      - echo Updating ECS service...
+      - aws ecs update-service --cluster $ECS_CLUSTER --service $ECS_SERVICE --force-new-deployment --region $AWS_REGION
+      - echo Done.
+      - printf '[{"name":"service-c","imageUri":"%s"}]' $REPO_URI:$IMAGE_TAG > imagedefinitions.json
+
+artifacts:
+  files:
+    - imagedefinitions.json
