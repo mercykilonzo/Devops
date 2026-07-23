@@ -1,0 +1,51 @@
+version: 0.2
+# CodeBuild buildspec for service-b.
+# Pipeline flow: GitHub -> CodePipeline -> CodeBuild (this file) -> ECR -> ECS.
+# This is the manual build/login/tag/push you ran by hand, now as code,
+# plus tests and the imagedefinitions.json handoff to the ECS deploy stage.
+#
+# Requires on the CodeBuild project:
+#   - Privileged mode ENABLED (Docker daemon for `docker build`)
+#   - A service role allowed to: ecr:GetAuthorizationToken, ecr push/pull, CloudWatch logs
+
+env:
+  variables:
+    AWS_DEFAULT_REGION: us-west-2
+    ECR_REPO: devops-g4-service-b
+    CONTAINER_NAME: service-b          # MUST match the task-definition container name
+    SERVICE_DIR: services/service-b
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.12
+    commands:
+      - echo "Installing test dependencies..."
+      - pip install --upgrade pip
+      - pip install -r $SERVICE_DIR/requirements.txt
+  pre_build:
+    commands:
+      - echo "Resolving account and image tag..."
+      - AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+      - ECR_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_REPO
+      - IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c1-7)
+      - echo "Target image = $ECR_URI:$IMAGE_TAG"
+      - echo "Running Django tests..."
+      - cd $SERVICE_DIR && python manage.py test --verbosity 2 && python manage.py check && cd "$CODEBUILD_SRC_DIR"
+      - echo "Logging in to ECR..."
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+  build:
+    commands:
+      - echo "Building image for linux/amd64 (Fargate)..."
+      - docker build --platform linux/amd64 -f $SERVICE_DIR/Dockerfile -t $ECR_URI:$IMAGE_TAG .
+  post_build:
+    commands:
+      - echo "Pushing image to ECR..."
+      - docker push $ECR_URI:$IMAGE_TAG
+      - echo "Writing imagedefinitions.json for the ECS deploy stage..."
+      - printf '[{"name":"%s","imageUri":"%s:%s"}]' "$CONTAINER_NAME" "$ECR_URI" "$IMAGE_TAG" > imagedefinitions.json
+      - cat imagedefinitions.json
+
+artifacts:
+  files:
+    - imagedefinitions.json
