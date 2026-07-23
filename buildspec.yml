@@ -7,17 +7,22 @@ phases:
       - aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin 827478161993.dkr.ecr.us-west-2.amazonaws.com
       - IMAGE_TAG=sha-$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c1-7)
       - echo "Image tag is $IMAGE_TAG"
+      - ECR_IMAGE=827478161993.dkr.ecr.us-west-2.amazonaws.com/devops-g4-service-c:$IMAGE_TAG
 
   build:
     commands:
       - echo "Building service-c image..."
       - docker build -t devops-g4-service-c:$IMAGE_TAG -f services/service-c/Dockerfile .
-      - docker tag devops-g4-service-c:$IMAGE_TAG 827478161993.dkr.ecr.us-west-2.amazonaws.com/devops-g4-service-c:$IMAGE_TAG
+      - docker tag devops-g4-service-c:$IMAGE_TAG $ECR_IMAGE
 
   post_build:
     commands:
       - echo "Pushing image to ECR..."
-      - docker push 827478161993.dkr.ecr.us-west-2.amazonaws.com/devops-g4-service-c:$IMAGE_TAG
-      - echo "Updating ECS service..."
-      - aws ecs update-service --cluster devops-g4-cluster --service devops-g4-service-c --force-new-deployment --region us-west-2
-      - echo "Deploy triggered for $IMAGE_TAG"
+      - docker push $ECR_IMAGE
+      - echo "Writing imagedefinitions.json..."
+      - printf '[{"name":"service-c","imageUri":"%s"}]' $ECR_IMAGE > imagedefinitions.json
+      - cat imagedefinitions.json
+
+artifacts:
+  files:
+    - imagedefinitions.json
