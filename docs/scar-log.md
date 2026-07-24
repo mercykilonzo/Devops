@@ -155,3 +155,11 @@
 - **Cause:** Health check used curl -f but python:3.12-slim does not include curl
 - **Repair:** Changed health check to python -c "import urllib.request; urllib.request.urlopen(...)"
 - **Prevention:** Never use curl in health checks for slim Python images — use urllib instead
+
+## Entry 14 — Service B rollback test
+- **Symptom:** Deployed revision 7 with broken health check and non-existent image tag sha-f62e683 in service-b ECR
+- **Hypothesis:** Circuit breaker would detect image pull failure and roll back
+- **Evidence:** CannotPullContainerError after 7 retries, circuit breaker triggered at 3 failed tasks, revision 4 restored automatically
+- **Cause:** Intentional Gate 3B test — image tag did not exist in devops-g4-service-b ECR repository
+- **Repair:** Service automatically restored to revision 4, circuit breaker remains enabled
+- **Prevention:** Always verify image exists in the correct ECR repo before deploying. Each service has its own ECR repo — tags do not transfer between repos
