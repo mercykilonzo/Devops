@@ -163,3 +163,11 @@
 - **Cause:** Intentional Gate 3B test — image tag did not exist in devops-g4-service-b ECR repository
 - **Repair:** Service automatically restored to revision 4, circuit breaker remains enabled
 - **Prevention:** Always verify image exists in the correct ECR repo before deploying. Each service has its own ECR repo — tags do not transfer between repos
+
+## Entry 15 — Service A rollback test
+- **Symptom:** Deployed revision 3 with health check pointing to wrong port 9999
+- **Hypothesis:** Circuit breaker would detect failures and roll back automatically
+- **Evidence:** Revision 3 rolloutState FAILED, ECS automatically restored revision 2, running count stayed at 2 throughout
+- **Cause:** Intentional Gate 3B test
+- **Repair:** Service automatically restored to revision 2
+- **Prevention:** Always verify health check port matches container port before deploying
